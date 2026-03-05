@@ -1,0 +1,16 @@
+# Compiled JavaScript files
+lib/**/*.js
+lib/**/*.js.map
+
+# TypeScript declaration files
+typings/
+
+# Node modules
+node_modules/
+
+# Local env
+*.local
+
+# Service account keys
+fetosense-v2-service-account.json
+old-service-account.json
