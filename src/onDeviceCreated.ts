@@ -101,21 +101,30 @@ export const onDeviceCreated = onDocumentCreated(
 
       // Organization
       await migrateOrganization(organizationId);
-
+      console.log("Organization migrated:", organizationId)
+      
       // Doctors
       await migrateDoctors(organizationId);
+      console.log("doctors migrated:", organizationId);
+      
 
       // Mothers
       await migrateMothers(organizationId, deviceName);
+      console.log("mothers migrated:", organizationId, deviceName);
+
 
       // Tests
       await migrateTests(organizationId, deviceName);
 
-      /* ---------------- COMPLETE ---------------- */
+console.log("tests migrated:", organizationId, deviceName);
+console.log("All migration steps finished, updating status...");
 
-      await updateMigrationStatus(uid, "completed");
-
-      console.log("Migration completed:", uid);
+try {
+  await updateMigrationStatus(uid, "completed");
+  console.log("Migration completed:", uid);
+} catch (e) {
+  console.error("Status update failed:", e);
+}
 
     } catch (error: any) {
   console.error("Migration failed:", error);
