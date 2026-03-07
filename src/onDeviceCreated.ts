@@ -2,9 +2,9 @@ import { onDocumentCreated } from "firebase-functions/v2/firestore";
 
 import { migrateOrganization } from "./migrateOrganization";
 import { migrateDoctors } from "./migrateDoctors";
-import { migrateMothers } from "./migrateMothers";
-import { migrateTests } from "./migrateTests";
 import { migrateDeviceUser } from "./migrateDeviceUser";
+
+import { publishMigrationBatch } from "./migrationQueue";
 
 import {
   startMigration,
@@ -29,7 +29,6 @@ export const onDeviceCreated = onDocumentCreated(
     }
 
     const uid = event.params.userId;
-
     const email = data.email;
 
     if (!email) {
@@ -94,55 +93,49 @@ export const onDeviceCreated = onDocumentCreated(
 
       console.log("Migration started...");
 
-      /* ---------------- MIGRATE DATA ---------------- */
+      /* ---------------- MIGRATE STATIC DATA ---------------- */
 
       // Device user
       await migrateDeviceUser(uid, organizationId, deviceName);
 
       // Organization
       await migrateOrganization(organizationId);
-      console.log("Organization migrated:", organizationId)
-      
+      console.log("Organization migrated:", organizationId);
+
       // Doctors
       await migrateDoctors(organizationId);
-      console.log("doctors migrated:", organizationId);
-      
+      console.log("Doctors migrated:", organizationId);
 
-      // Mothers
-      await migrateMothers(organizationId, deviceName);
-      console.log("mothers migrated:", organizationId, deviceName);
+      /* ---------------- START BATCH MIGRATION ---------------- */
 
+      console.log("Publishing first migration batch...");
 
-      // Tests
-      await migrateTests(organizationId, deviceName);
+      await publishMigrationBatch({
+        userId: uid,
+        organizationId,
+        deviceName,
+      });
 
-console.log("tests migrated:", organizationId, deviceName);
-console.log("All migration steps finished, updating status...");
-
-try {
-  await updateMigrationStatus(uid, "completed");
-  console.log("Migration completed:", uid);
-} catch (e) {
-  console.error("Status update failed:", e);
-}
+      console.log("First migration batch scheduled");
 
     } catch (error: any) {
-  console.error("Migration failed:", error);
+      console.error("Migration failed:", error);
 
-  // Detect memory / timeout errors
-  const isResourceError =
-    error?.message?.includes("Memory") ||
-    error?.message?.includes("memory") ||
-    error?.message?.includes("timeout") ||
-    error?.message?.includes("Deadline");
+      const isResourceError =
+        error?.message?.includes("Memory") ||
+        error?.message?.includes("memory") ||
+        error?.message?.includes("timeout") ||
+        error?.message?.includes("Deadline");
 
-  await updateMigrationStatus(uid, "failed", {
-    message: error?.message || "Unknown error",
-    type: isResourceError ? "MEMORY_OR_RUNTIME" : "APPLICATION_ERROR",
-    stack: error?.stack,
-  });
+      await updateMigrationStatus(uid, "failed", {
+        message: error?.message || "Unknown error",
+        type: isResourceError
+          ? "MEMORY_OR_RUNTIME"
+          : "APPLICATION_ERROR",
+        stack: error?.stack,
+      });
 
-  throw error;
-}
+      throw error;
+    }
   }
 );

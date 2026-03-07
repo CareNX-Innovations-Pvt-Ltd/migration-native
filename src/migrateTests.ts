@@ -1,47 +1,60 @@
-// import { oldDb, newDb } from "./firebase";
-// import { processInBatches } from "./helpers";
-
-// export async function migrateTests(organizationId: string, deviceName: string) {
-//   const query = oldDb
-//     .collection("tests")
-//     .where("organizationId", "==", organizationId)
-//     .where("deviceName", "==", deviceName);
-
-//   await processInBatches(query, async (doc, batch) => {
-//     batch.set(newDb.collection("tests").doc(doc.id), doc.data(), { merge: true });
-//   }, newDb);
-// }
 import { oldDb, newDb } from "./firebase";
-import { processInBatches } from "./helpers";
+import { updateTestCursor } from "./migrationTracker";
 
-// Only migrate tests created AFTER 31 Dec 2024
-const MIGRATION_START_DATE = new Date("2025-01-01T00:00:00Z");
+const BATCH_SIZE = 1000;
 
-export async function migrateTests(organizationId: string, deviceName: string) {
-
-  console.log("Starting test migration for:", organizationId, deviceName);
-
-  const query = oldDb
+export async function migrateTests(
+  userId: string,
+  organizationId: string,
+  deviceName: string,
+  lastCursor?: string
+) {
+  let query = oldDb
     .collection("tests")
     .where("organizationId", "==", organizationId)
     .where("deviceName", "==", deviceName)
-    .where("createdOn", ">=", MIGRATION_START_DATE)
-    .orderBy("createdOn");
+    .orderBy("createdOn", "desc")
+    .limit(BATCH_SIZE);
 
-  const countSnap = await query.count().get();
-  console.log("Total tests to migrate:", countSnap.data().count);
+  if (lastCursor) {
+    const cursorDoc = await oldDb.collection("tests").doc(lastCursor).get();
+    if (cursorDoc.exists) {
+      query = query.startAfter(cursorDoc);
+    }
+  }
 
-  await processInBatches(
-    query,
-    async (doc, batch) => {
-      batch.set(
-        newDb.collection("tests").doc(doc.id),
-        doc.data(),
-        { merge: true }
-      );
-    },
-    newDb
-  );
+  const snap = await query.get();
 
-  console.log("Test migration finished for:", deviceName);
+  if (snap.empty) {
+    console.log("No more tests to migrate");
+    return false;
+  }
+
+  const chunkSize = 50;
+
+for (let i = 0; i < snap.docs.length; i += chunkSize) {
+
+  const batch = newDb.batch();
+
+  const chunk = snap.docs.slice(i, i + chunkSize);
+
+  for (const doc of chunk) {
+    batch.set(
+      newDb.collection("tests").doc(doc.id),
+      doc.data(),
+      { merge: true }
+    );
+  }
+
+  await batch.commit();
+
+}
+
+  const lastDoc = snap.docs[snap.docs.length - 1];
+
+  await updateTestCursor(userId, lastDoc.id);
+
+  console.log("Migrated tests batch:", snap.size);
+
+  return snap.size === BATCH_SIZE;
 }

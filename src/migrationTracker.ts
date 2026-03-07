@@ -1,14 +1,10 @@
 import { newDb } from "./firebase";
 import { FieldValue } from "firebase-admin/firestore";
 
-/**
- * Initialize migration map inside user doc
- */
 export async function startMigration(
   userId: string,
   migration: boolean,
   isNewUser: boolean
-
 ) {
   const ref = newDb.collection("users").doc(userId);
 
@@ -16,8 +12,14 @@ export async function startMigration(
     {
       isNewUser,
       migration: {
-        migrationStatus: "start", // start | ongoing | completed | failed
-        migration, // true / false
+        migrationStatus: "start",
+        migration,
+
+        lastTestCursor: null,
+        lastMotherCursor: null,
+
+        partiallyMigrated: false,
+        fullyMigrated: false,
 
         createdOn: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -29,9 +31,6 @@ export async function startMigration(
   );
 }
 
-/**
- * Update status
- */
 export async function updateMigrationStatus(
   userId: string,
   status: "ongoing" | "completed" | "failed" | "not applicable",
@@ -43,16 +42,48 @@ export async function updateMigrationStatus(
   };
 
   if (status === "completed") {
-    updateData["migration.completedAt"] =
-      FieldValue.serverTimestamp();
+    updateData["migration.completedAt"] = FieldValue.serverTimestamp();
   }
 
   if (status === "failed") {
     updateData["migration.errorLog"] = errorLog;
   }
 
-  await newDb
-    .collection("users")
-    .doc(userId)
-    .update(updateData);
+  await newDb.collection("users").doc(userId).update(updateData);
+}
+
+export async function markPartiallyMigrated(userId: string) {
+  await newDb.collection("users").doc(userId).update({
+    "migration.partiallyMigrated": true,
+    "migration.updatedAt": FieldValue.serverTimestamp(),
+  });
+}
+
+export async function updateTestCursor(
+  userId: string,
+  cursor: string
+) {
+  await newDb.collection("users").doc(userId).update({
+    "migration.lastTestCursor": cursor,
+    "migration.updatedAt": FieldValue.serverTimestamp(),
+  });
+}
+
+export async function updateMotherCursor(
+  userId: string,
+  cursor: string
+) {
+  await newDb.collection("users").doc(userId).update({
+    "migration.lastMotherCursor": cursor,
+    "migration.updatedAt": FieldValue.serverTimestamp(),
+  });
+}
+
+export async function markFullyMigrated(userId: string) {
+  await newDb.collection("users").doc(userId).update({
+    "migration.fullyMigrated": true,
+    "migration.migrationStatus": "completed",
+    "migration.completedAt": FieldValue.serverTimestamp(),
+    "migration.updatedAt": FieldValue.serverTimestamp(),
+  });
 }
