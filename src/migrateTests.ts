@@ -32,23 +32,39 @@ export async function migrateTests(
 
   const chunkSize = 50;
 
-for (let i = 0; i < snap.docs.length; i += chunkSize) {
+  for (let i = 0; i < snap.docs.length; i += chunkSize) {
+    const batch = newDb.batch();
 
-  const batch = newDb.batch();
+    const chunk = snap.docs.slice(i, i + chunkSize);
 
-  const chunk = snap.docs.slice(i, i + chunkSize);
+    for (const doc of chunk) {
+      const data = doc.data();
 
-  for (const doc of chunk) {
-    batch.set(
-      newDb.collection("tests").doc(doc.id),
-      doc.data(),
-      { merge: true }
-    );
+      let testType = "nst";
+
+      if (Array.isArray(data.tocoEntries) && data.tocoEntries.length > 0) {
+        const sum = data.tocoEntries.reduce((acc: number, val: number) => acc + val, 0);
+        const avg = sum / data.tocoEntries.length;
+
+        if (avg > 10) {
+          testType = "ctg";
+        }
+      }
+
+      const newData = {
+        ...data,
+        testType,
+      };
+
+      batch.set(
+        newDb.collection("tests").doc(doc.id),
+        newData,
+        { merge: true }
+      );
+    }
+
+    await batch.commit();
   }
-
-  await batch.commit();
-
-}
 
   const lastDoc = snap.docs[snap.docs.length - 1];
 
